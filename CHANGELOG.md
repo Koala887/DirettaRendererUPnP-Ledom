@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.5.20] - 2026-09-22
 
 ### Fixed
 - **Clicks when PCM playback is cut or restarted in the middle of the music** (herisson-88; first reported on Audiophile Style by an Audirvana user — clicks on Stop and on track skip —, reproduced and confirmed fixed by listening with Audirvana on a Holo Audio Red). `getNewStream()` went from a music buffer straight to a zero buffer, and back: a step in the waveform, heard as a short click whose level depends on the sample value where the cut lands — hence "regularly", not always. Audirvana makes it easy to hear because it skips tracks with `Stop` → `SetAVTransportURI` → `Play` (25 ms apart, captured on the wire), so every skip goes through `onStop` → `stopPlayback(false)`. New `PcmFade.h`: 10 ms smoothstep ramps, exact Q16 integer gain (monotonic at every rate), samples rounded to nearest, no allocation or I/O in the callback thread.
