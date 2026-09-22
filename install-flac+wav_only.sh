@@ -231,13 +231,13 @@ get_ffmpeg_configure_opts() {
 --disable-filters
 --disable-inline-asm
 --disable-doc
---enable-muxer=flac,mov,ipod,wav,w64,ffmetadata
---enable-demuxer=flac,mov,wav,w64,aiff,ffmetadata,dsf,aac,hls,mpegts,mp3,ogg,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,lavfi
---enable-encoder=alac,flac,pcm_s16le,pcm_s24le,pcm_s32le
---enable-decoder=alac,flac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_s24be,pcm_s32be,dsd_lsbf,dsd_msbf,dsd_lsbf_planar,dsd_msbf_planar,vorbis,aac,aac_fixed,aac_latm,mp3,mp3float,mjpeg,png
---enable-parser=aac,aac_latm,flac,vorbis,mpegaudio,mjpeg
---enable-protocol=file,pipe,http,https,tcp,udp,hls
---enable-filter=aresample,hdcd,sine,anull
+--enable-muxer=flac,wav
+--enable-demuxer=flac,wav,pcm_s16le,pcm_s24le,pcm_s32le
+--enable-encoder=flac,pcm_s16le,pcm_s24le,pcm_s32le
+--enable-decoder=flac,pcm_s16le,pcm_s24le,pcm_s32le
+--enable-parser=flac
+--enable-protocol=file,pipe,http,https,tcp,udp
+--enable-filter=aresample,anull
 --enable-version3
 OPTS
 }
@@ -275,10 +275,9 @@ get_ffmpeg_8_minimal_opts() {
 --disable-doc
 --disable-avdevice
 --disable-swscale
---enable-protocol=file,http,https,tcp,udp,hls
---enable-demuxer=flac,wav,aiff,dsf,aac,mov,mp3,ogg,hls,mpegts,pcm_s16be
---enable-decoder=flac,alac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_s24be,pcm_s32be,dsd_lsbf,dsd_msbf,dsd_lsbf_planar,dsd_msbf_planar,aac,aac_fixed,aac_latm,mp3,mp3float,vorbis
---enable-parser=aac,aac_latm,mpegaudio,vorbis
+--enable-protocol=file,http,https,tcp,udp
+--enable-demuxer=flac,wav
+--enable-decoder=flac,pcm_s16le,pcm_s24le,pcm_s32le
 --enable-muxer=flac,wav
 --enable-filter=aresample
 OPTS
@@ -560,7 +559,7 @@ test_ffmpeg_installation() {
     # build missing only the _planar variants passes this check if they're
     # left out, while still failing "Codec not found" on every real DSD file
     # (confirmed on a Fedora RPM Fusion ffmpeg-free build, 2026-09-08).
-    local required_decoders="flac alac dsd_lsbf dsd_msbf dsd_lsbf_planar dsd_msbf_planar pcm_s16le pcm_s24le pcm_s32le pcm_f32le"
+    local required_decoders="flac pcm_s16le pcm_s24le pcm_s32le pcm_f32le"
     local all_found=true
 
     for dec in $required_decoders; do
@@ -692,6 +691,8 @@ install_ffmpeg() {
     echo "     - Latest stable branch, minimal audio-only build"
     echo "     - Smallest footprint: only essential decoders enabled"
     echo "     - Installs to /usr (system-wide)"
+    echo "     !!    FFmpeg Minimal version      !!"
+    echo "     !!    only supports wav+flac      !!"
     echo ""
     if [ "$OS" = "fedora" ]; then
     echo "  4) Install from RPM Fusion (Fedora)"
@@ -733,6 +734,7 @@ install_ffmpeg() {
             echo "$FFMPEG_TARGET_VERSION" > "$SCRIPT_DIR/.ffmpeg-version"
             ;;
         3)
+            # FFmpeg 8.0.1 minimal (recommended)
             FFMPEG_TARGET_VERSION="$FFMPEG_8_VERSION"
             build_ffmpeg_8_minimal "$FFMPEG_8_VERSION"
             rm -rf "$FFMPEG_BUILD_DIR"
@@ -1573,7 +1575,7 @@ WRAPPER_EOF
         fi
 
         # Migrate settings from old config
-        local KNOWN_KEYS="TARGET PORT NAME RENDERER_NAME GAPLESS VERBOSE MINIMAL_UPNP DOP INTERFACE NETWORK_INTERFACE TARGET_INTERFACE TARGET_SPEED TARGET_DUPLEX THREAD_MODE CYCLE_TIME CYCLE_MIN_TIME INFO_CYCLE TRANSFER_MODE TARGET_PROFILE_LIMIT MTU MTU_OVERRIDE CPU_AUDIO CPU_DECODE CPU_OTHER PCM_BUFFER_SECONDS PCM_REMOTE_BUFFER_SECONDS DSD_BUFFER_SECONDS PCM_PREFILL_MS PCM_REMOTE_PREFILL_MS DSD_PREFILL_MS NICE_LEVEL IO_SCHED_CLASS IO_SCHED_PRIORITY RT_PRIORITY PORT_STRICT SINK_BUFFER_MS RAPID_START NO_PREFETCH"
+        local KNOWN_KEYS="TARGET PORT NAME RENDERER_NAME GAPLESS VERBOSE MINIMAL_UPNP INTERFACE NETWORK_INTERFACE TARGET_INTERFACE TARGET_SPEED TARGET_DUPLEX THREAD_MODE CYCLE_TIME CYCLE_MIN_TIME INFO_CYCLE TRANSFER_MODE TARGET_PROFILE_LIMIT MTU MTU_OVERRIDE CPU_AUDIO CPU_DECODE CPU_OTHER PCM_BUFFER_SECONDS PCM_REMOTE_BUFFER_SECONDS DSD_BUFFER_SECONDS PCM_PREFILL_MS PCM_REMOTE_PREFILL_MS DSD_PREFILL_MS NICE_LEVEL IO_SCHED_CLASS IO_SCHED_PRIORITY RT_PRIORITY PORT_STRICT SINK_BUFFER_MS RAPID_START NO_PREFETCH"
         local migrated_keys=""
         local obsolete_keys=""
 
@@ -1951,6 +1953,8 @@ show_main_menu() {
     echo ""
     echo "============================================"
     echo " Diretta UPnP Renderer - Installation"
+    echo " !!    FFmpeg Minimal version      !!"
+    echo " !!    only supports wav+flac      !!"
     echo "============================================"
     echo ""
     echo "Installation options:"
