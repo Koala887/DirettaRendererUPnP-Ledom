@@ -450,6 +450,10 @@ public:
      * 3 s remote — several seconds of the OLD position after each seek,
      * piling up on repeated seeks). No-op when not playing or paused
      * (resume clears the ring).
+     *
+     * PCM: the old position is first faded out like a Stop (the call then
+     * blocks the decode thread for ~15 ms, 60 ms at most, with the lifecycle
+     * mutex held), and the new one is faded in.
      */
     void flushForSeek();
 
@@ -628,6 +632,12 @@ private:
     void logNegotiatedProfile(const char* when);
     void alignBufferToNegotiatedCycle();
     void requestShutdownSilence(int buffers);
+    void playOutShutdownSilence(int buffers, int timeoutMs);  // + drops the ring behind it
+    void dropRing();
+    // PCM fades, callback thread (out of line: getNewStream() only tests whether to call them)
+    bool pcmFadeLayout(int bytes, int& channels, int& bytesPerSample, size_t& frames) const;
+    __attribute__((noinline)) bool fadeOutBuffer(uint8_t* dest, int bytes);
+    __attribute__((noinline)) void fadeInBuffer(uint8_t* dest, int bytes);
     bool waitForOnline(unsigned int timeoutMs);
     void logSinkCapabilities();
 
@@ -797,6 +807,16 @@ private:
     std::atomic<bool> m_postOnlineDelayDone{false};
     bool m_isFirstConnect = true;  // Extra stabilization on very first connect after startup
     std::atomic<int> m_silenceBuffersRemaining{0};
+    // PCM fade-in (see PcmFade.h), the two members getNewStream() tests on
+    // every call: FADE_ARM from seek/resume, FADE_CANCEL from open() (a track
+    // started by Play stays bit-exact, and a ramp that a Stop interrupted is
+    // dropped), picked up with the first music buffer.
+    // m_fadeInFramesRemaining belongs to the getNewStream() thread, which also
+    // arms it itself when a rebuffering ends.
+    static constexpr uint32_t FADE_ARM = 1;
+    static constexpr uint32_t FADE_CANCEL = 2;
+    std::atomic<uint32_t> m_fadeInRequest{0};
+    uint32_t m_fadeInFramesRemaining = 0;
     std::atomic<int> m_stabilizationCount{0};
 
     // Statistics
@@ -806,6 +826,19 @@ private:
     std::atomic<uint32_t> m_underrunCount{0};
     std::atomic<bool> m_rebuffering{false};              // Rebuffering after sustained underrun
     std::atomic<bool> m_postReconnectRebuffering{false}; // Use 50% threshold for one cycle after live stream reconnect
+
+    // PCM fades, cold part (kept after the members above so that those stay on
+    // the cache line they had). Fade-out: FADE_ARM with every shutdown
+    // silence, played before the silence buffers. The plain members belong to
+    // the getNewStream() thread.
+    std::atomic<uint32_t> m_fadeOutRequest{0};
+    uint32_t m_fadeOutFramesTotal = 0;
+    uint32_t m_fadeOutFramesRemaining = 0;
+    uint32_t m_fadeInFramesTotal = 0;
+    // For dumpStats()
+    std::atomic<uint32_t> m_fadeOutsCompleted{0};
+    std::atomic<uint32_t> m_fadeOutsSkipped{0};     // nothing playing, ring dry, DSD/DoP
+    std::atomic<uint32_t> m_fadeInsCompleted{0};
 
     // Worker → decode thread event mailbox (see consumeRtEvents()), on its
     // own cache line: the decode thread polls it while the worker writes
