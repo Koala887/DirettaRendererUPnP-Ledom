@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Clicks when PCM playback is cut or restarted in the middle of the music** (herisson-88; first reported on Audiophile Style by an Audirvana user — clicks on Stop and on track skip —, reproduced and confirmed fixed by listening with Audirvana on a Holo Audio Red). `getNewStream()` went from a music buffer straight to a zero buffer, and back: a step in the waveform, heard as a short click whose level depends on the sample value where the cut lands — hence "regularly", not always. Audirvana makes it easy to hear because it skips tracks with `Stop` → `SetAVTransportURI` → `Play` (25 ms apart, captured on the wire), so every skip goes through `onStop` → `stopPlayback(false)`. New `PcmFade.h`: 10 ms smoothstep ramps, exact Q16 integer gain (monotonic at every rate), samples rounded to nearest, no allocation or I/O in the callback thread.
+  - **Fade-out** before the shutdown silence (Stop, Pause, track skip, format change, close — whenever the worker is still playing): `requestShutdownSilence()` asks for it, `getNewStream()` keeps popping the ring through the ramp and only then sends the silence buffers. Stop/Pause take 10 ms longer.
+  - **The ring is dropped behind the shutdown silence** (`playOutShutdownSilence()`, shared by Stop, Pause, close and the DSD quick resume): it used to stay full of music, which the worker would pop again, at full level, on any callback arriving after the silence count had run out and before `stop()` took effect. It is now emptied as soon as the worker is on silence (prefill restarted, so only silence can follow). Nothing is lost: `open()` and `resumePlayback()` threw that content away anyway.
+  - **Seek**: the old position is faded out before `flushForSeek()` drops the ring (it used to be cut dead; same `playOutShutdownSilence()` as a Stop; the call now blocks the decode thread ~15 ms, 60 ms at most), and the new position is faded in.
+  - **Fade-in** on the first music buffers after a resume from pause and at the end of a rebuffering (underrun, post-reconnect) — the places where the music comes back mid-waveform. An underrun itself cannot be faded out: there is nothing left to fade.
+  - **What stays bit-exact**: a track started by `Play` is not faded in (`open()` cancels the request) and gapless transitions are untouched — only a seek, a resume or a rebuffering is faded in, wherever it lands. In steady playback `getNewStream()` gains one atomic load (`m_fadeInRequest`, next to `m_prefillComplete`) and one test of a member owned by the callback thread, after the pop; nothing writes them while the music plays.
+  - 16/24/32-bit PCM only: native DSD, DoP, and DoP pre-encoded by the media server (marker bytes detected on the first faded buffer) keep the previous behaviour, since none of them can be scaled. If nothing was playing (prefill, rebuffering) the fade-out is skipped and the silence starts as before; if the ring runs dry (natural end of track) the ramp stops there.
+  - `kill -USR1` now reports `Fade-outs: N complete, M skipped; fade-ins: K`, so the ramps can be checked on a `NOLOG` build.
+  - Not changed: the auto-stop path taken when `SetAVTransportURI` arrives during playback without a prior `Stop` (`stopPlayback(true)`, no silence at all) — Audirvana does not use it and it was not reproduced; `requestPostReconnectRebuffering()` still cuts to silence un-faded (the return is faded in); a `Seek` handled between `Play` and the first decode cycle starts mid-music without a fade-in, as before (`flushForSeek()` has nothing to flush yet and `open()` cancels the request) — seeking is refused while stopped, so the window is a few ms.
+
 ## [2.5.19] - 2026-09-09
 
 ### Fixed

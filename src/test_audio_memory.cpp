@@ -5,6 +5,9 @@
 #include "AudioMemoryTest.h"
 #include "memcpyfast_audio.h"
 #include "DirettaRingBuffer.h"
+#include "PcmFade.h"
+#include <algorithm>
+#include <cstdlib>
 
 // Forward declarations
 bool test_memcpy_audio_fixed_correctness();
@@ -34,6 +37,13 @@ bool test_s24_hint_survives_clear();
 bool test_s24_timeout_defaults_to_msb();
 bool test_push_whole_frames_only();
 bool test_push32To16_correctness();
+bool test_fade_out_gain_curve();
+bool test_fade_out_all_widths();
+bool test_fade_out_rounding();
+bool test_fade_out_across_buffers();
+bool test_looks_like_dop();
+bool test_fade_in_mirrors_fade_out();
+bool test_fade_in_leaves_the_rest_untouched();
 
 int main() {
     std::cout << "=== DirettaRingBuffer Unit Tests ===" << std::endl;
@@ -85,6 +95,16 @@ int main() {
     RUN_TEST(test_s24_timeout_defaults_to_msb);
     RUN_TEST(test_push_whole_frames_only);
     RUN_TEST(test_push32To16_correctness);
+
+    // Group 8: PCM fades around cuts in the middle of the music
+    std::cout << std::endl << "--- PCM Fades ---" << std::endl;
+    RUN_TEST(test_fade_out_gain_curve);
+    RUN_TEST(test_fade_out_all_widths);
+    RUN_TEST(test_fade_out_rounding);
+    RUN_TEST(test_fade_out_across_buffers);
+    RUN_TEST(test_looks_like_dop);
+    RUN_TEST(test_fade_in_mirrors_fade_out);
+    RUN_TEST(test_fade_in_leaves_the_rest_untouched);
 
     std::cout << std::endl;
     std::cout << "=== Results: " << passed << " passed, " << failed << " failed ===" << std::endl;
@@ -1050,5 +1070,201 @@ bool test_push32To16_correctness() {
     ring.pop(out, sizeof(out));
     const uint8_t expect[8] = { 0x03, 0x04, 0x13, 0x14, 0xA3, 0xA4, 0xF3, 0xF4 };
     TEST_ASSERT(memcmp(out, expect, 8) == 0, "MSB bytes kept, LSB bytes dropped");
+    return true;
+}
+
+//=============================================================================
+// Group 8: PCM fades around cuts in the middle of the music
+//=============================================================================
+
+// Reads sample `i` of a little-endian signed buffer
+static int32_t fadeTestSample(const std::vector<uint8_t>& buf, size_t i, int bps) {
+    const uint8_t* p = buf.data() + i * bps;
+    if (bps == 2) { int16_t s; memcpy(&s, p, 2); return s; }
+    if (bps == 4) { int32_t s; memcpy(&s, p, 4); return s; }
+    return static_cast<int32_t>((static_cast<uint32_t>(p[0]) << 8) |
+                                (static_cast<uint32_t>(p[1]) << 16) |
+                                (static_cast<uint32_t>(p[2]) << 24)) >> 8;
+}
+
+static void fadeTestFill(std::vector<uint8_t>& buf, size_t samples, int bps, int32_t value) {
+    buf.resize(samples * bps);
+    for (size_t i = 0; i < samples; i++) {
+        for (int b = 0; b < bps; b++) {
+            buf[i * bps + b] = static_cast<uint8_t>(static_cast<uint32_t>(value) >> (8 * b));
+        }
+    }
+}
+
+bool test_fade_out_gain_curve() {
+    TEST_ASSERT_EQ(PcmFade::fadeFramesForRate(44100), static_cast<uint32_t>(441), "10 ms at 44.1 kHz");
+    TEST_ASSERT_EQ(PcmFade::fadeFramesForRate(0), static_cast<uint32_t>(0), "Unknown rate: no fade");
+    TEST_ASSERT_EQ(PcmFade::gainQ16(480, 480), static_cast<uint32_t>(65536), "Unity at the start");
+    TEST_ASSERT_EQ(PcmFade::gainQ16(240, 480), static_cast<uint32_t>(32768), "Half way: -6 dB");
+    TEST_ASSERT_EQ(PcmFade::gainQ16(0, 480), static_cast<uint32_t>(0), "Zero at the end");
+    TEST_ASSERT_EQ(PcmFade::gainQ16(5, 0), static_cast<uint32_t>(0), "No ramp: muted, no division by zero");
+    TEST_ASSERT_EQ(PcmFade::gainQ16(9, 5), static_cast<uint32_t>(65536), "Past the start: unity");
+    TEST_ASSERT_EQ(PcmFade::fadeFramesForRate(768000), static_cast<uint32_t>(7680), "10 ms at 768 kHz");
+    TEST_ASSERT_EQ(PcmFade::fadeFramesForRate(22579200), PcmFade::MAX_FADE_FRAMES, "Clamped to what gainQ16 computes exactly");
+    // Monotonic for every ramp length in use (8 kHz .. 768 kHz) and at the clamp
+    const uint32_t totals[] = {1, 2, 80, 441, 480, 882, 960, 1764, 1920, 3528, 3840, 7056, 7680,
+                               PcmFade::MAX_FADE_FRAMES};
+    for (uint32_t total : totals) {
+        uint32_t prev = 65536;
+        for (uint32_t r = total; r-- > 0;) {
+            uint32_t g = PcmFade::gainQ16(r, total);
+            TEST_ASSERT(g <= prev, "Gain never rises (remaining=" << r << " of " << total << ")");
+            prev = g;
+        }
+        TEST_ASSERT_EQ(prev, static_cast<uint32_t>(0), "Reaches zero");
+    }
+    // No corner at either end: the first and last steps are far smaller than the middle one
+    uint32_t firstStep = 65536 - PcmFade::gainQ16(479, 480);
+    uint32_t midStep = PcmFade::gainQ16(240, 480) - PcmFade::gainQ16(239, 480);
+    TEST_ASSERT(firstStep * 20 < midStep && PcmFade::gainQ16(1, 480) * 20 < midStep, "Smooth ends");
+    return true;
+}
+
+bool test_fade_out_all_widths() {
+    const int widths[3] = {2, 3, 4};
+    const int32_t fullScale[3] = {32767, 8388607, 2147483647};
+    for (int w = 0; w < 3; w++) {
+        for (int sign = 1; sign >= -1; sign -= 2) {
+            int bps = widths[w];
+            int32_t value = (sign > 0) ? fullScale[w] : -fullScale[w] - 1;
+            const size_t frames = 480;
+            std::vector<uint8_t> buf;
+            fadeTestFill(buf, frames * 2, bps, value);
+            uint32_t remaining = frames;
+            PcmFade::applyFadeOut(buf.data(), frames, 2, bps, remaining, frames);
+            TEST_ASSERT_EQ(remaining, static_cast<uint32_t>(0), "Ramp fully consumed");
+            int64_t prev = std::abs(static_cast<int64_t>(value));
+            for (size_t f = 0; f < frames; f++) {
+                int32_t l = fadeTestSample(buf, f * 2, bps);
+                int32_t r = fadeTestSample(buf, f * 2 + 1, bps);
+                TEST_ASSERT_EQ(l, r, "Both channels get the same gain");
+                TEST_ASSERT(l == 0 || (l > 0) == (value > 0), "Sign preserved (" << bps << " bytes)");
+                int64_t mag = std::abs(static_cast<int64_t>(l));
+                TEST_ASSERT(mag <= prev, "Level never rises (" << bps << " bytes, frame " << f << ")");
+                prev = mag;
+            }
+            int32_t first = fadeTestSample(buf, 0, bps);
+            TEST_ASSERT(std::abs(static_cast<int64_t>(first)) > std::abs(static_cast<int64_t>(value)) * 99 / 100,
+                        "Starts at the music level: no step into the ramp");
+            TEST_ASSERT_EQ(fadeTestSample(buf, (frames - 1) * 2, bps), 0, "Ends on zero: no step into the silence");
+        }
+    }
+    return true;
+}
+
+bool test_fade_out_rounding() {
+    // Rounded to nearest, not truncated towards -inf: +v and -v stay within one LSB
+    // of each other all along the ramp, and a half-gain frame is exact.
+    const int widths[3] = {2, 3, 4};
+    for (int w = 0; w < 3; w++) {
+        int bps = widths[w];
+        std::vector<uint8_t> pos, neg;
+        fadeTestFill(pos, 480, bps, 12345);
+        fadeTestFill(neg, 480, bps, -12345);
+        uint32_t remaining = 480;
+        PcmFade::applyFadeOut(pos.data(), 480, 1, bps, remaining, 480);
+        remaining = 480;
+        PcmFade::applyFadeOut(neg.data(), 480, 1, bps, remaining, 480);
+        for (size_t f = 0; f < 480; f++) {
+            int32_t sum = fadeTestSample(pos, f, bps) + fadeTestSample(neg, f, bps);
+            TEST_ASSERT(sum >= -1 && sum <= 1, "Symmetric within 1 LSB (" << bps << " bytes, frame " << f << ")");
+        }
+        // Frame 239 runs at remaining == 240: gain exactly 0.5
+        TEST_ASSERT_EQ(fadeTestSample(pos, 239, bps), 6173, "12345 x 0.5 rounds to 6173");
+    }
+    return true;
+}
+
+bool test_fade_out_across_buffers() {
+    // 441 frames in 1 ms buffers of 44/45 frames must give the same samples as one pass
+    const uint32_t total = 441;
+    std::vector<uint8_t> whole, split;
+    fadeTestFill(whole, 500 * 2, 3, 5000000);
+    split = whole;
+    uint32_t remaining = total;
+    PcmFade::applyFadeOut(whole.data(), 500, 2, 3, remaining, total);
+    remaining = total;
+    size_t done = 0;
+    for (int i = 0; done < 500; i++) {
+        size_t n = std::min<size_t>((i % 10 == 9) ? 45 : 44, 500 - done);
+        PcmFade::applyFadeOut(split.data() + done * 6, n, 2, 3, remaining, total);
+        done += n;
+    }
+    TEST_ASSERT(whole == split, "Buffer boundaries do not change the ramp");
+    TEST_ASSERT_EQ(fadeTestSample(whole, 499 * 2, 3), 0, "Frames past the ramp are silent");
+    return true;
+}
+
+bool test_looks_like_dop() {
+    // Stereo 24-bit DoP: marker in the top byte, alternating 0x05 / 0xFA per frame
+    const uint8_t dop[12] = { 0x69, 0x96, 0x05, 0x69, 0x96, 0x05,   0x96, 0x69, 0xFA, 0x96, 0x69, 0xFA };
+    TEST_ASSERT(PcmFade::looksLikeDoP(dop, 2, 2, 3), "DoP markers detected");
+    const uint8_t pcm[12] = { 0x10, 0x20, 0x05, 0x10, 0x20, 0x05,   0x11, 0x21, 0x05, 0x11, 0x21, 0x05 };
+    TEST_ASSERT(!PcmFade::looksLikeDoP(pcm, 2, 2, 3), "Plain PCM is not DoP");
+    TEST_ASSERT(!PcmFade::looksLikeDoP(dop, 3, 2, 2), "16-bit cannot carry DoP");
+    TEST_ASSERT(!PcmFade::looksLikeDoP(dop, 1, 2, 3), "One frame is not enough to see the alternation");
+
+    // Other phase, mono
+    const uint8_t mono[6] = { 0x96, 0x69, 0xFA,   0x69, 0x96, 0x05 };
+    TEST_ASSERT(PcmFade::looksLikeDoP(mono, 2, 1, 3), "0xFA then 0x05, mono");
+    // Near miss: 0x05 then 0xFB
+    const uint8_t miss[6] = { 0x69, 0x96, 0x05,   0x96, 0x69, 0xFB };
+    TEST_ASSERT(!PcmFade::looksLikeDoP(miss, 2, 1, 3), "0x05 then 0xFB is music");
+    // 24-bit DoP left-justified in a 32-bit container: marker still in the top byte
+    const uint8_t in32[16] = { 0x00, 0x69, 0x96, 0x05,  0x00, 0x69, 0x96, 0x05,
+                               0x00, 0x96, 0x69, 0xFA,  0x00, 0x96, 0x69, 0xFA };
+    TEST_ASSERT(PcmFade::looksLikeDoP(in32, 2, 2, 4), "32-bit container");
+    return true;
+}
+
+bool test_fade_in_mirrors_fade_out() {
+    const int widths[3] = {2, 3, 4};
+    for (int w = 0; w < 3; w++) {
+        int bps = widths[w];
+        const size_t frames = 441;
+        std::vector<uint8_t> in, out;
+        fadeTestFill(in, frames * 2, bps, -20000);
+        out = in;
+        uint32_t remaining = frames;
+        PcmFade::applyFadeIn(in.data(), frames, 2, bps, remaining, frames);
+        TEST_ASSERT_EQ(remaining, static_cast<uint32_t>(0), "Ramp fully consumed");
+        remaining = frames;
+        PcmFade::applyFadeOut(out.data(), frames, 2, bps, remaining, frames);
+        TEST_ASSERT_EQ(fadeTestSample(in, 0, bps), 0, "Starts from zero: no step out of the silence");
+        for (size_t f = 0; f < frames; f++) {
+            TEST_ASSERT_EQ(fadeTestSample(in, f * 2, bps), fadeTestSample(out, (frames - 1 - f) * 2, bps),
+                           "Same curve, reversed");
+            TEST_ASSERT_EQ(fadeTestSample(in, f * 2, bps), fadeTestSample(in, f * 2 + 1, bps),
+                           "Both channels get the same gain");
+        }
+        int32_t last = fadeTestSample(in, (frames - 1) * 2, bps);
+        TEST_ASSERT(last < -19800, "Ends at the music level: no step into the music");
+    }
+    return true;
+}
+
+bool test_fade_in_leaves_the_rest_untouched() {
+    // 441-frame ramp over 1 ms buffers, then two more buffers: bit-exact again
+    const uint32_t total = 441;
+    std::vector<uint8_t> ref, buf;
+    fadeTestFill(ref, 600 * 2, 3, 1234567);
+    for (size_t i = 0; i < ref.size(); i += 6) ref[i] = static_cast<uint8_t>(i);  // not constant
+    buf = ref;
+    uint32_t remaining = total;
+    size_t done = 0;
+    while (done < 600) {
+        size_t n = std::min<size_t>(44, 600 - done);
+        if (remaining > 0) PcmFade::applyFadeIn(buf.data() + done * 6, n, 2, 3, remaining, total);
+        done += n;
+    }
+    TEST_ASSERT_EQ(remaining, static_cast<uint32_t>(0), "Ramp over");
+    TEST_ASSERT(memcmp(buf.data() + total * 6, ref.data() + total * 6, (600 - total) * 6) == 0,
+                "Frames after the ramp are bit-identical, inside the last faded buffer too");
+    TEST_ASSERT(memcmp(buf.data(), ref.data(), total * 6) != 0, "The ramp itself was applied");
     return true;
 }
