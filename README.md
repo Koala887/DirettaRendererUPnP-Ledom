@@ -1,4 +1,4 @@
-# Diretta UPnP Renderer v2.5.19
+# Diretta UPnP Renderer v2.5.20
 
 **The world's first native UPnP/DLNA renderer with Diretta protocol support - Low-Latency Edition**
 
@@ -8,18 +8,18 @@
 
 ---
 
-![Version](https://img.shields.io/badge/version-2.5.19-blue.svg)
+![Version](https://img.shields.io/badge/version-2.5.20-blue.svg)
 ![Low Latency](https://img.shields.io/badge/Latency-Low-green.svg)
 ![SDK](https://img.shields.io/badge/SDK-DIRETTA::Sync-orange.svg)
 ![Audirvana](https://img.shields.io/badge/Audirvana-Compatible-green.svg)
 
 ---
 
-## What's New in v2.5.19
+## What's New in v2.5.20
 
-**Build fix: a false "FFmpeg version mismatch" abort on Fedora aarch64 (Raspberry Pi).**
+**Fix: clicks when PCM playback is cut or restarted in the middle of the music (PR #98, herisson-88).**
 
-- `install.sh`'s `get_libdir()` only routed to `/usr/lib64` on `x86_64`, but Fedora/RHEL use `/usr/lib64` on every 64-bit arch they ship (aarch64 included) — so on a Pi, FFmpeg installed to `/usr/lib`, `pkg-config` couldn't find it (it only searches `/usr/lib64/pkgconfig` there), and a shell-scripting bug in the Makefile's fallback detection turned that failure into an empty string instead of `"unknown"`, tripping a false version-mismatch abort even though the just-built FFmpeg was correct. Fixed at both layers — see CHANGELOG for the full explanation.
+- `getNewStream()` used to jump straight from a music buffer to a zero silence buffer and back on Stop, Pause, track skip, seek and format changes — a step in the waveform, heard as a click. New 10 ms smoothstep fade-out/fade-in ramps (`PcmFade.h`, exact Q16 integer gain, no allocation in the audio callback) around every one of those cuts. A companion fix in the same code path also drops the ring as soon as the shutdown silence actually starts playing, instead of leaving it full of stale music that could be replayed at full level if a callback landed in a narrow timing window. 16/24/32-bit PCM only — native DSD, DoP and pre-encoded DoP are unaffected and unchanged.
 
 See [CHANGELOG.md](CHANGELOG.md) for details.
 
@@ -27,6 +27,7 @@ See [CHANGELOG.md](CHANGELOG.md) for details.
 
 | Version | Highlights |
 |---------|-----------|
+| **v2.5.19** | Build fix: a false "FFmpeg version mismatch" abort on Fedora aarch64 (Raspberry Pi) |
 | **v2.5.18** | Build fix: compiling against some SDK 149 installs failed with "use of undeclared identifier 'is_MSmode'" |
 | **v2.5.17** | `install.sh`'s FFmpeg self-test now catches a real DSD failure mode it used to miss (`_planar` decoder variants) |
 | **v2.5.16** | Six contributions from herisson-88: seek reliability (PR #91), HTTP prefetch thread (PR #96), EOF-drain memory-safety fix (PR #95), SDK 150 knobs (PR #94), `--port-strict` (PR #93), tuner/doc fixes (PR #92) |
@@ -1168,4 +1169,4 @@ This software is provided "as is" without warranty. While designed for high-qual
 
 **Enjoy bit-perfect, low-latency audio streaming!**
 
-*Last updated: 2026-09-09 (v2.5.19)*
+*Last updated: 2026-09-22 (v2.5.20)*
