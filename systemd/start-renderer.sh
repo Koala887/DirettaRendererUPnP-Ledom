@@ -29,6 +29,7 @@ MTU="${MTU:-${MTU_OVERRIDE:-}}"
 # Examples: CPU_AUDIO=3  or  CPU_AUDIO="3,4,5"
 CPU_AUDIO="${CPU_AUDIO:-}"
 CPU_DECODE="${CPU_DECODE:-}"
+CPU_PREFECH="${CPU_PREFECH:-}"
 CPU_OTHER="${CPU_OTHER:-}"
 
 # Buffer configuration (leave empty to use defaults)
@@ -249,6 +250,10 @@ if [ -n "$CPU_DECODE" ]; then
     CMD+=("--cpu-decode" "$CPU_DECODE")
 fi
 
+if [ -n "$CPU_PREFECH" ]; then
+    CMD+=("--cpu-prefech" "$CPU_PREFECH")
+fi
+
 if [ -n "$CPU_OTHER" ]; then
     CMD+=("--cpu-other" "$CPU_OTHER")
 fi
@@ -344,7 +349,7 @@ reconcile_cpu_slice() {
     [ -n "$base" ] || return 0
 
     local extra target
-    extra=$(printf '%s %s %s' "$CPU_AUDIO" "$CPU_DECODE" "$CPU_OTHER" | tr ',' ' ')
+    extra=$(printf '%s %s %s' "$CPU_AUDIO" "$CPU_DECODE" "$CPU_PREFECH" "$CPU_OTHER" | tr ',' ' ')
     if [ -n "${extra// /}" ]; then
         target="$base $extra"
         echo "Reconciling $slice AllowedCPUs: renderer cores [$base] + CPU_* [$extra]"

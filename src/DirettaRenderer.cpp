@@ -296,6 +296,8 @@ bool DirettaRenderer::start(std::atomic<bool>* stopSignal) {
             std::cout << "[DirettaRenderer] CPU audio (Diretta worker): core(s) " << m_config.cpuAudio << std::endl;
         if (!m_config.cpuDecode.empty())
             std::cout << "[DirettaRenderer] CPU decode (Audio decode): core(s) " << m_config.cpuDecode << std::endl;
+        if (!m_config.cpuPrefech.empty())
+            std::cout << "[DirettaRenderer] CPU prefech (Preload): core(s) " << m_config.cpuPrefech << std::endl;
         if (!m_config.cpuOther.empty())
             std::cout << "[DirettaRenderer] CPU other (UPnP/Position): core(s) " << m_config.cpuOther << std::endl;
         if (m_config.pcmBufferSeconds > 0)
@@ -829,7 +831,18 @@ bool DirettaRenderer::start(std::atomic<bool>* stopSignal) {
 
         // Start threads
         m_running = true;
-        AudioEngine::setHelperThreadCores(parseCoreList(m_config.cpuOther));
+
+        auto prefechCores = parseCoreList(m_config.cpuPrefech);
+        if (!prefechCores.empty()) {
+            AudioEngine::setHelperThreadCores(parseCoreList(m_config.cpuPrefech));
+        } else {
+            AudioEngine::setHelperThreadCores(parseCoreList(m_config.cpuOther));
+        }
+
+
+        
+
+
         m_audioThread = std::thread(&DirettaRenderer::audioThreadFunc, this);
         if (!g_minimalUPnP) {
             m_positionThread = std::thread(&DirettaRenderer::positionThreadFunc, this);

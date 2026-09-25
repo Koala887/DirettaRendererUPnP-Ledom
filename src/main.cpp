@@ -370,6 +370,20 @@ DirettaRenderer::Config parseArguments(int argc, char* argv[]) {
                 }
             }
         }
+        else if (arg == "--cpu-prefech" && i + 1 < argc) {
+            config.cpuPrefech = argv[++i];
+            std::string onlineDesc;
+            auto online = getOnlineCpus(&onlineDesc);
+            auto cores = parseCoreSpec(config.cpuPrefech);
+            for (int c : cores) {
+                if (online.find(c) == online.end()) {
+                    std::cerr << "Warning: --cpu-prefech contains invalid core " << c
+                              << " (online CPUs: " << onlineDesc << ")" << std::endl;
+                    config.cpuPrefech.clear();
+                    break;
+                }
+            }
+        }        
         else if (arg == "--cpu-other" && i + 1 < argc) {
             config.cpuOther = argv[++i];
             std::string onlineDesc;
@@ -454,6 +468,7 @@ DirettaRenderer::Config parseArguments(int argc, char* argv[]) {
                       << "CPU affinity (core isolation for audio quality):\n"
                       << "  --cpu-audio <cores>        Pin Diretta worker thread to CPU core(s), comma-separated (e.g., '3' or '3,4')\n"
                       << "  --cpu-decode <cores>       Pin DirettaRenderer Audio thread (decode) to CPU core(s), comma-separated\n"
+                      << "  --cpu-prefech <cores>      Pin Prefech thread (prefech) to CPU core(s), comma-separated\n"
                       << "  --cpu-other <cores>        Pin other threads (UPnP/position) to CPU core(s), comma-separated\n"
                       << "\n"
                       << "Buffer configuration (advanced — leave unset to use defaults):\n"
