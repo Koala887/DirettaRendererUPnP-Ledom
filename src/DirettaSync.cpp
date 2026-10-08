@@ -147,8 +147,7 @@ static uint16_t sdkMSmodeBitmask(const I& info) {
 // SDK 155 added a 10th parameter to Sync::open(): bool diswork ("Enforce a
 // workaround during disconnection"), no further documentation beyond that
 // one-line doc comment. SDK <=150 only has the 9-arg overload. Resolved at
-// compile time like sdkConnect()/sdkMsMode() above. `false` matches what
-// sibling projects a private sibling project and a private sibling project pass, to stay closest to
+// compile time like sdkConnect()/sdkMsMode() above. `false` stays closest to
 // pre-155 behavior; worth trying `true` if a disconnect-related bug is ever
 // chased here — the name is suggestive.
 template <typename S, typename = void>

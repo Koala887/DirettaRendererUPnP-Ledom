@@ -676,8 +676,7 @@ private:
     // unpredictable." We called setSinkConfigure() BEFORE setSink() (see
     // open()'s history), which SDK 149's uninitialized-flag bug tolerated;
     // SDK 150 fixed that flag, exposing the wrong order as the ~50s
-    // connectWait() stall / outright setSink failures. See
-    // a-private-project-hardware-test-rig memory note for the full writeup.
+    // connectWait() stall / outright setSink failures.
     DIRETTA::FormatConfigure m_pendingSinkFormat;
 
     // Connection state

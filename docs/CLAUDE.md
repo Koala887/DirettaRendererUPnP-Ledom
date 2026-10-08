@@ -86,10 +86,10 @@ DirettaRendererUPnP-L is the **low-latency optimized** fork of DirettaRendererUP
 ### SDK 155 breaking API changes — ported (2026-10-07)
 
 SDK revision 155 broke source compatibility in four places (three expected
-going in from the sibling projects `a private sibling project`/`another private sibling project`, a fourth
-found only by actually compiling against a real SDK 155 tree — it wasn't in
-either sibling project's writeup). All four resolved at compile time via the
-same SFINAE/`if constexpr` pattern as `sdkConnect()`/`sdkMsMode()` (added
+going in from prior cross-project investigation, a fourth found only by
+actually compiling against a real SDK 155 tree — it wasn't caught by that
+earlier investigation). All four resolved at compile time via the same
+SFINAE/`if constexpr` pattern as `sdkConnect()`/`sdkMsMode()` (added
 v2.5.16/v2.5.18), so the same `DirettaSync.cpp` keeps building unmodified
 against SDK 149, 150 and 155 — no version pinning, no `#ifdef SDK_VERSION`.
 Verified: clean build against all three, `make test` unaffected (32/2,
@@ -101,14 +101,14 @@ the actual `Find::Setting`/discovery code path cleanly against SDK 155.
    that one-line doc comment) — SDK 149/150 only have the 9-arg overload.
    New `SdkHasDiswork<S>`/`sdkOpen()` resolve which overload exists;
    `openSDK()` calls `sdkOpen(static_cast<DIRETTA::Sync&>(*this), ...)`
-   passing `false` for `diswork` on SDK 155 (what both sibling projects
-   pass, closest to pre-155 behavior — worth trying `true` if a
-   disconnect-related bug is ever chased here, the name is suggestive).
-   The explicit `static_cast` matters: `DirettaSync` declares its own
-   `open(const AudioFormat&)`, which hides `DIRETTA::Sync::open()` by name
-   from a `DirettaSync`-typed expression — without the cast, `sdkOpen`'s
-   SFINAE probe and its `sync.open(...)` call would both silently resolve
-   against the wrong `open()` overload (or fail to compile).
+   passing `false` for `diswork` on SDK 155, closest to pre-155 behavior —
+   worth trying `true` if a disconnect-related bug is ever chased here, the
+   name is suggestive. The explicit `static_cast` matters: `DirettaSync`
+   declares its own `open(const AudioFormat&)`, which hides
+   `DIRETTA::Sync::open()` by name from a `DirettaSync`-typed expression —
+   without the cast, `sdkOpen`'s SFINAE probe and its `sync.open(...)` call
+   would both silently resolve against the wrong `open()` overload (or
+   fail to compile).
 2. **`Sync::Info::supportMSmode`** (a `uint16_t` bitmask field, bit0=MS1/
    bit1=MS2/bit2=MS3 on SDK ≤150) **became three boolean methods**
    (`checkSinkSupportMSmode1()`/`2()`/`3()`) on SDK 155, field gone. New
@@ -117,21 +117,20 @@ the actual `Find::Setting`/discovery code path cleanly against SDK 155.
    `DirettaSync.cpp` (`info.supportMSmode` → `sdkMSmodeBitmask(info)`) and
    their bit-check logic below didn't need to change.
 3. **`Find::Setting::Name` removed outright, no replacement** (the one not
-   anticipated from the sibling projects — found by the SDK 155 build
-   failing on it directly). Purely a self-identification string for the
-   discovery request: 3 of this file's 4 `Find::Setting` construction sites
-   never set it anyway and work fine without it, confirming it's cosmetic.
-   New `SdkHasFindSettingName<T>`/`setFindSettingNameIfPresent()` set it
-   only where the field exists.
+   anticipated going in — found by the SDK 155 build failing on it
+   directly). Purely a self-identification string for the discovery
+   request: 3 of this file's 4 `Find::Setting` construction sites never set
+   it anyway and work fine without it, confirming it's cosmetic. New
+   `SdkHasFindSettingName<T>`/`setFindSettingNameIfPresent()` set it only
+   where the field exists.
 4. `SyncBuffer::setupBuffer()`/`connect()`'s callback-mode bool moved
    between the two calls — **not applicable here**, this repo uses `Sync`
    directly, never `SyncBuffer`.
 
-Cross-project context (how items 1/2 were found against `a private sibling project`/
-`another private sibling project`, the AI/SDK licensing question that investigation raised
-and Yu Harada's answer) is in `a private sibling project`'s memory file
-`a-private-project-sdk-155-api-break.md` if ever needed — not accessible from
-this repo directly, ask Dominique.
+Cross-project context on how items 1/2 were anticipated ahead of this
+port (the AI/SDK licensing question that investigation raised and Yu
+Harada's answer) exists but isn't accessible from this repo — ask
+Dominique if it's ever needed.
 
 ### Key SDK Headers
 
