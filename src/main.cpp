@@ -311,11 +311,11 @@ DirettaRenderer::Config parseArguments(int argc, char* argv[]) {
         }
         else if (arg == "--transfer-mode" && i + 1 < argc) {
             config.transferMode = argv[++i];
-            if (config.transferMode != "auto" && config.transferMode != "varmax" &&
+            if (config.transferMode != "auto" && config.transferMode != "varmax" && config.transferMode != "varpriotime" &&
                 config.transferMode != "varauto" && config.transferMode != "fixauto" &&
                 config.transferMode != "random" && config.transferMode != "auto-sdk") {
                 std::cerr << "Invalid transfer-mode. Use: auto, varmax, varauto, fixauto, random, "
-                          << "auto-sdk" << std::endl;
+                          << "varpriotime, auto-sdk" << std::endl;
                 exit(1);
             }
         }
@@ -442,7 +442,7 @@ DirettaRenderer::Config parseArguments(int argc, char* argv[]) {
                       << "                             default: auto = one MTU of audio per cycle\n"
                       << "  --cycle-min-time <us>      Min cycle time in microseconds (random and auto-sdk modes)\n"
                       << "  --info-cycle <us>          Info packet cycle in microseconds (default: 100000)\n"
-                      << "  --transfer-mode <mode>     Transfer mode: auto, varmax, varauto, fixauto, random,\n"
+                      << "  --transfer-mode <mode>     Transfer mode: auto, varmax, varauto, fixauto, random, varpriotime,\n"
                       << "                             auto-sdk (= Sync::configTransferAuto, SDK sample host mode)\n"
                       << "  --target-profile-limit <us> Target profile limit time (0=SelfProfile (stable), default: 0, >0=experimental)\n"
                       << "  --sink-buffer-ms <ms>      Sink (target) buffer time at setSink (default: the cycle time,\n"

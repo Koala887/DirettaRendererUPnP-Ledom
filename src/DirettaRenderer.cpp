@@ -250,6 +250,8 @@ bool DirettaRenderer::start(std::atomic<bool>* stopSignal) {
                 syncConfig.transferMode = DirettaTransferMode::RANDOM;
             else if (m_config.transferMode == "auto-sdk")
                 syncConfig.transferMode = DirettaTransferMode::AUTO_SDK;
+            else if (m_config.transferMode == "varpriotime")
+                syncConfig.transferMode = DirettaTransferMode::VAR_PRIO_TIME;
             else
                 syncConfig.transferMode = DirettaTransferMode::AUTO;
         }

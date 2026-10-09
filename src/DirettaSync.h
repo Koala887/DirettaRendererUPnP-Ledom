@@ -319,7 +319,7 @@ private:
 
 // AUTO_SDK = Sync::configTransferAuto(minSync, target, max), the mode the SDK
 // author's own sample host (SinHost) uses; DRUP never exposed it before.
-enum class DirettaTransferMode { FIX_AUTO, VAR_AUTO, VAR_MAX, RANDOM, AUTO, AUTO_SDK };
+enum class DirettaTransferMode { FIX_AUTO, VAR_AUTO, VAR_MAX, RANDOM, AUTO, AUTO_SDK, VAR_PRIO_TIME };
 
 //=============================================================================
 // Configuration
